@@ -134,6 +134,9 @@ struct mmc_ext_csd {
 	u8			barrier_en;
 
 	u8			fw_version;		/* 254 */
+/* add by liunianliang for read emmc health, 2017.08.22 begin */
+	u8			pre_eol_info;		/* 267 */
+/* add by liunianliang for read emmc health, 2017.08.22 end */
 	unsigned int            feature_support;
 #define MMC_DISCARD_FEATURE	BIT(0)                  /* CMD38 feature */
 };

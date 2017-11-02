@@ -300,13 +300,14 @@ static const char * const qpnp_poff_reason[] = {
 static int warm_boot;
 module_param(warm_boot, int, 0);
 
+#if 0
 static struct timer_list tm;
 
 struct timer_data {
     struct qpnp_pon *pon;
     struct qpnp_pon_config *cfg;
 }timer_data;
-
+#endif
 
 static int
 qpnp_pon_masked_write(struct qpnp_pon *pon, u16 addr, u8 mask, u8 val)
@@ -1112,6 +1113,7 @@ qpnp_config_reset(struct qpnp_pon *pon, struct qpnp_pon_config *cfg)
 	return 0;
 }
 
+#if 0
 static int
 qpnp_config_reset_reg(struct qpnp_pon *pon, struct qpnp_pon_config *cfg)
 {
@@ -1171,6 +1173,7 @@ qpnp_config_reset_reg(struct qpnp_pon *pon, struct qpnp_pon_config *cfg)
 
 	return 0;
 }
+#endif
 
 static int
 qpnp_pon_request_irqs(struct qpnp_pon *pon, struct qpnp_pon_config *cfg)
@@ -1285,6 +1288,7 @@ qpnp_pon_config_input(struct qpnp_pon *pon,  struct qpnp_pon_config *cfg)
 	return 0;
 }
 
+#if 0
 static void timer_func(unsigned long data){
     pr_err("%s reset qpnp config reg...\n",__func__);
     timer_data.cfg->s1_timer = 4480;
@@ -1302,6 +1306,7 @@ static void start_timer(struct qpnp_pon *pon,  struct qpnp_pon_config *cfg){
     tm.function = timer_func;
     add_timer(&tm);
 }
+#endif
 static int qpnp_pon_config_init(struct qpnp_pon *pon)
 {
 	int rc = 0, i = 0, pmic_wd_bark_irq;
@@ -1646,9 +1651,11 @@ static int qpnp_pon_config_init(struct qpnp_pon *pon)
 			dev_err(&pon->spmi->dev, "Unable to request-irq's\n");
 			goto unreg_input_dev;
 		}
+#if 0
         if(cfg->pon_type == PON_KPDPWR){
             start_timer(pon, cfg);
         }
+#endif
 	}
 
 	device_init_wakeup(&pon->spmi->dev, 1);

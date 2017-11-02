@@ -24,7 +24,7 @@
 		qcom,torch-source = <&pmi8950_torch0>;
 		qcom,switch-source = <&pmi8950_switch>;
 	};
-    led_flash1: qcom,camera-subflash {
+	led_flash1: qcom,camera-subflash {
 		cell-index = <1>;
 		compatible = "qcom,camera-subflash";
 		qcom,flash-type = <1>;

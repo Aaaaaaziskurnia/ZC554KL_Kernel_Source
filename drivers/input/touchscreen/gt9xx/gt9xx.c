@@ -33,8 +33,6 @@ static struct workqueue_struct *goodix_wq;
 struct i2c_client * i2c_connect_client = NULL; 
 int gtp_charging_flag = 0;
 int gtp_FG_charging_status = 0;
-static int tp_p_flag=0;
-
 
 char hw_info[50];
 int gtp_rst_gpio;
@@ -43,6 +41,7 @@ u8 config[GTP_CONFIG_MAX_LENGTH + GTP_ADDR_LENGTH]
                 = {GTP_REG_CONFIG_DATA >> 8, GTP_REG_CONFIG_DATA & 0xff};
 
 static struct switch_dev switch_fw_version;
+#define GTP_RESUME_EN 1
 
 #if GTP_HAVE_TOUCH_KEY
     static const u16 touch_key_array[] = GTP_KEY_TAB;
@@ -143,72 +142,110 @@ int gtp_tpd_usb_plugin(int charger_on)
 }
 EXPORT_SYMBOL(gtp_tpd_usb_plugin);
 
+#if GTP_RESUME_EN
 
-/************************************************************************
-* Name: fts_p_show
-* Brief:  no
-* Input: device, device attribute, char buf
-* Output: no
-* Return:
-***********************************************************************/
-static ssize_t tp_p_show(struct device *dev, struct device_attribute *attr, char *buf)
+static struct work_struct gtp_resume_work;
+static struct workqueue_struct *gtp_resume_workqueue = NULL;
+static s8 gtp_wakeup_sleep(struct goodix_ts_data * ts);
+static s8 gtp_request_irq(struct goodix_ts_data *ts);
+void gtp_irq_enable(struct goodix_ts_data *ts);
+void gtp_usb_plugin(bool mode);
+void gtp_usb_exit(bool mode);
+
+static void  gtp_resume_func(struct work_struct *work)
 {
-    int count;
-    struct goodix_ts_data *ts = i2c_get_clientdata(i2c_connect_client);
+    static int var1 = 1;
+    s8 ret = -1;
+	struct goodix_ts_data *ts = i2c_get_clientdata(i2c_connect_client);
 
-    mutex_lock(&ts->input_dev->mutex);
-    count = sprintf(buf, "%d\n", tp_p_flag);
-    mutex_unlock(&ts->input_dev->mutex);
-    return count;
+    GTP_DEBUG_FUNC();
+    if (ts->enter_update) {
+        GTP_INFO("%s, it is updating firmware now, so just return\n", __func__);
+        var1 = 0;
+        return;
+    }
+    GTP_INFO("System resume.");
 
+    ret = gtp_wakeup_sleep(ts);
+	msleep(5);
 
+	if(var1 != 1)
+	{
+	    ret = gtp_request_irq(ts);
+	    if (ret < 0)
+	    {
+	        GTP_INFO("GTP request irq fail in resume.");
+	    }
+	}
+	var1 = 0;
+
+#if GTP_GESTURE_WAKEUP
+	    if(DOZE_ENABLED == doze_status) {
+	        disable_irq_wake(ts->client->irq);
+	    }
+	    doze_status = DOZE_DISABLED;
+#endif
+
+    if (ret < 0)
+    {
+        GTP_ERROR("GTP later resume failed.");
+    }
+
+#if (GTP_COMPATIBLE_MODE)
+	    if (CHIP_TYPE_GT9F == ts->chip_type)
+	    {
+	        gtp_send_cfg(ts->client);
+	    }
+#endif
+
+    if (ts->use_irq)
+    {
+        gtp_irq_enable(ts);
+    }
+    else
+    {
+        //hrtimer_start(&ts->timer, ktime_set(1, 0), HRTIMER_MODE_REL);
+    }
+
+    ts->gtp_is_suspend = 0;
+
+#if GTP_CHARGER_EN
+	    if(gtp_FG_charging_status) {
+	        gtp_usb_plugin(true);
+	    } else {
+	        gtp_usb_exit( true);
+	    }
+#endif
 }
 
-/************************************************************************
-* Name: fts_p_store
-* Brief:  no
-* Input: device, device attribute, char buf, char count
-* Output: no
-* Return:
-***********************************************************************/
-static ssize_t tp_p_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+void gtp_resume_queue_work(void)
 {
-    struct goodix_ts_data *ts = i2c_get_clientdata(i2c_connect_client);
-    mutex_lock(&ts->input_dev->mutex);
-	 
-    if ( strnicmp(buf, "1", 1)  == 0) {
-        printk("GTP psensor near\n");
-        tp_p_flag = 1;
-	
-    }
-    else if ( strnicmp(buf, "0", 1)  == 0) {
-        printk("GTP psensor farway\n");
-        tp_p_flag = 0;
-    }
-
-     mutex_unlock(&ts->input_dev->mutex);
-    return count;
+    cancel_work_sync(&gtp_resume_work);
+    queue_work(gtp_resume_workqueue, &gtp_resume_work);
 }
 
+int gtp_resume_init(void)
+{
+    INIT_WORK(&gtp_resume_work, gtp_resume_func);
+    gtp_resume_workqueue = create_workqueue("gtp_resume_wq");
+    if (gtp_resume_workqueue == NULL)
+    {
+        //FTS_ERROR("[POINT_REPORT]: Failed to create fts_point_report_check_workqueue!!");
+    }
+    else
+    {
+       // FTS_DEBUG("[POINT_REPORT]: Success to create fts_point_report_check_workqueue!!");
+    }
 
+    return 0;
+}
 
-/* sysfs  node
- *   read example: cat  fts_p_mode        ---read p mode
- *   write example:echo 01 > fts_p_mode   ---write p mode to 01
- *
- */
-static DEVICE_ATTR(tp_p_mode, S_IRUGO | S_IWUSR, tp_p_show, tp_p_store);
-
-static struct attribute *tp_p_mode_attrs[] = {
-    &dev_attr_tp_p_mode.attr,
-    NULL,
-};
-
-static struct attribute_group tp_p_group = {
-    .attrs = tp_p_mode_attrs,
-};
-
-
+int gtp_resume_exit(void)
+{
+    destroy_workqueue(gtp_resume_workqueue);
+    return 0;
+}
+#endif
 
 /*******************************************************
 Function:
@@ -518,9 +555,6 @@ Output:
 *********************************************************/
 static void gtp_touch_down(struct goodix_ts_data* ts,s32 id,s32 x,s32 y,s32 w)
 {
-    if(tp_p_flag == 1)
-		return;
-
 #if GTP_CHANGE_X2Y
     GTP_SWAP(x, y);
 #endif
@@ -555,9 +589,6 @@ Output:
 *********************************************************/
 static void gtp_touch_up(struct goodix_ts_data* ts, s32 id)
 {
-    if(tp_p_flag == 1)
-		return;
-
 #if GTP_ICS_SLOT_REPORT
     input_mt_slot(ts->input_dev, id);
     input_report_abs(ts->input_dev, ABS_MT_TRACKING_ID, -1);
@@ -565,6 +596,15 @@ static void gtp_touch_up(struct goodix_ts_data* ts, s32 id)
 #else
     input_report_key(ts->input_dev, BTN_TOUCH, 0);
 #endif
+}
+
+static void gtp_clear_all_touch(struct goodix_ts_data *ts)
+{
+    s32 i  = 0;
+	for(i = 0; i < GTP_MAX_TOUCH; i++){
+		gtp_touch_up(ts, i);
+	}
+	input_sync(ts->input_dev);
 }
 
 #if GTP_WITH_PEN
@@ -2760,7 +2800,11 @@ static int goodix_ts_probe(struct i2c_client *client, const struct i2c_device_id
         ts->abs_y_max = GTP_MAX_HEIGHT;
         ts->int_trigger_type = GTP_INT_TRIGGER;
     }
-    
+
+#if GTP_RESUME_EN
+		gtp_resume_init();
+#endif
+
     // Create proc file system
     gt91xx_config_proc = proc_create(GT91XX_CONFIG_PROC_FILE, 0666, NULL, &config_proc_ops);
     if (gt91xx_config_proc == NULL)
@@ -2835,14 +2879,6 @@ static int goodix_ts_probe(struct i2c_client *client, const struct i2c_device_id
 #if GTP_CREATE_WR_NODE
     init_wr_node(client);
 #endif
-
-    ret = sysfs_create_group(&client->dev.kobj, &tp_p_group);
-    if (ret != 0) {
-        GTP_DEBUG("fts_p_mode_group(sysfs) create failed!");
-        sysfs_remove_group(&client->dev.kobj, &tp_p_group);
-    }
-
-
     return 0;
 //error:
 //	GTP_GPIO_FREE(gtp_rst_gpio);
@@ -2894,8 +2930,6 @@ static int goodix_ts_remove(struct i2c_client *client)
     input_unregister_device(ts->input_dev);
     kfree(ts);
 
-    sysfs_remove_group(&client->dev.kobj, &tp_p_group);
-
     return 0;
 }
 
@@ -2910,8 +2944,8 @@ Output:
 *******************************************************/
 static void goodix_ts_suspend(struct goodix_ts_data *ts)
 {
-    s8 ret = -1;    
-    
+    s8 ret = -1;
+
     GTP_DEBUG_FUNC();
     if (ts->enter_update) {
     	return;
@@ -2919,13 +2953,27 @@ static void goodix_ts_suspend(struct goodix_ts_data *ts)
     GTP_INFO("System suspend.");
 
     ts->gtp_is_suspend = 1;
+
 #if GTP_ESD_PROTECT
     gtp_esd_switch(ts->client, SWITCH_OFF);
 #endif
 
 #if GTP_GESTURE_WAKEUP
+			gtp_irq_disable(ts);	//add by zjh
+			msleep(2);
+
+	#ifdef GTP_ICS_SLOT_REPORT
+			gtp_clear_all_touch(ts);
+			GTP_DEBUG("Touch Release!");
+	#else
+			gtp_touch_up(ts, 0);
+			input_sync(ts->input_dev);
+	#endif
+
     if(ts->gesture_mode_switch) {
         ret = gtp_enter_doze(ts);
+		gtp_irq_enable(ts);	  //add by zjh
+		msleep(2);
         if(ret > 0) {
             enable_irq_wake(ts->client->irq);
         }
@@ -2948,6 +2996,14 @@ static void goodix_ts_suspend(struct goodix_ts_data *ts)
     if (ts->use_irq)
     {
         gtp_irq_disable(ts);
+		msleep(2);
+		#ifdef GTP_ICS_SLOT_REPORT
+			gtp_clear_all_touch(ts);
+			GTP_DEBUG("Touch Release!");
+		#else
+			gtp_touch_up(ts, 0);
+			input_sync(ts->input_dev);
+		#endif
     }
     else
     {
@@ -2977,8 +3033,12 @@ Output:
 *******************************************************/
 static void goodix_ts_resume(struct goodix_ts_data *ts)
 {
+
+#if GTP_RESUME_EN
+	gtp_resume_queue_work();
+#else
     static int var1 = 1;
-    s8 ret = -1; 
+    s8 ret = -1;
     GTP_DEBUG_FUNC();
     if (ts->enter_update) {
         GTP_INFO("%s, it is updating firmware now, so just return\n", __func__);
@@ -2986,10 +3046,7 @@ static void goodix_ts_resume(struct goodix_ts_data *ts)
         return;
     }
     GTP_INFO("System resume.");
-	
-    tp_p_flag = 0;
-    printk("GTP resume, reset psensor flag\n");
-	
+
     ret = gtp_wakeup_sleep(ts);
 	msleep(5);
 
@@ -3003,24 +3060,24 @@ static void goodix_ts_resume(struct goodix_ts_data *ts)
 	}
 	var1 = 0;
 
-#if GTP_GESTURE_WAKEUP
-    if(DOZE_ENABLED == doze_status) {
-        disable_irq_wake(ts->client->irq);
-    }
-    doze_status = DOZE_DISABLED;
-#endif
+	#if GTP_GESTURE_WAKEUP
+	    if(DOZE_ENABLED == doze_status) {
+	        disable_irq_wake(ts->client->irq);
+	    }
+	    doze_status = DOZE_DISABLED;
+	#endif
 
     if (ret < 0)
     {
         GTP_ERROR("GTP later resume failed.");
     }
 
-#if (GTP_COMPATIBLE_MODE)
-    if (CHIP_TYPE_GT9F == ts->chip_type)
-    {
-        gtp_send_cfg(ts->client);
-    }
-#endif
+	#if (GTP_COMPATIBLE_MODE)
+	    if (CHIP_TYPE_GT9F == ts->chip_type)
+	    {
+	        gtp_send_cfg(ts->client);
+	    }
+	#endif
 
     if (ts->use_irq)
     {
@@ -3033,14 +3090,14 @@ static void goodix_ts_resume(struct goodix_ts_data *ts)
 
     ts->gtp_is_suspend = 0;
 
-#if GTP_CHARGER_EN
-    if(gtp_FG_charging_status) {
-        gtp_usb_plugin(true);
-    } else {
-        gtp_usb_exit( true);
-    }
+	#if GTP_CHARGER_EN
+	    if(gtp_FG_charging_status) {
+	        gtp_usb_plugin(true);
+	    } else {
+	        gtp_usb_exit( true);
+	    }
+	#endif
 #endif
-
 	
 #if GTP_ESD_PROTECT
     gtp_esd_switch(ts->client, SWITCH_ON);

@@ -205,6 +205,7 @@ static int32_t msm_isp_stats_buf_divert(struct vfe_device *vfe_dev,
 			msm_isp_halt_send_error(vfe_dev,
 					ISP_EVENT_PING_PONG_MISMATCH);
 		pr_err("stats_buf_divert: update put buf cnt fail\n");
+		trace_printk("stats_buf_divert: update put buf cnt fail\n");
 		return rc;
 	}
 
@@ -287,6 +288,8 @@ static int32_t msm_isp_stats_configure(struct vfe_device *vfe_dev,
 		if (rc < 0) {
 			pr_err("%s:%d failed: stats buf divert rc %d\n",
 				__func__, __LINE__, rc);
+			trace_printk("failed: stats buf divert rc %d\n",
+				rc);
 			result = rc;
 		}
 	}
@@ -331,6 +334,9 @@ void msm_isp_process_stats_irq(struct vfe_device *vfe_dev,
 
 	/* Process non-composite irq */
 	if (stats_irq_mask) {
+		trace_printk("stats_irq: vfe %d irq0: 0x%x pipos: 0x%x frmid: %d\n",
+			vfe_dev->pdev->id, irq_status0, pingpong_status,
+			vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
 		rc = msm_isp_stats_configure(vfe_dev, stats_irq_mask, ts,
 			pingpong_status, comp_flag);
 	}
@@ -343,6 +349,9 @@ void msm_isp_process_stats_irq(struct vfe_device *vfe_dev,
 
 			atomic_stats_mask = atomic_read(
 				&vfe_dev->stats_data.stats_comp_mask[j]);
+			trace_printk("comp_irq: vfe %d irq0: 0x%x pipos: 0x%x frmid: %d\n",
+				vfe_dev->pdev->id, irq_status0, pingpong_status,
+				vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
 
 			rc = msm_isp_stats_configure(vfe_dev, atomic_stats_mask,
 				ts, pingpong_status, !comp_flag);

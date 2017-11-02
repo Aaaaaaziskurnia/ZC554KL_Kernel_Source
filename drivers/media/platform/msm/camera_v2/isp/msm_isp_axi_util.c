@@ -595,6 +595,10 @@ static int msm_isp_check_epoch_status(struct vfe_device **vfe_dev,
 				vfe_dev_cur->pdev->id,
 				vfe_dev_cur->common_data->dual_vfe_res->
 					epoch_sync_mask);
+			trace_printk("Missing epoch: vfe %d, epoch mask 0x%x\n",
+				vfe_dev_cur->pdev->id,
+				vfe_dev_cur->common_data->dual_vfe_res->
+					epoch_sync_mask);
 			goto fatal;
 		}
 
@@ -1364,10 +1368,23 @@ static int  msm_isp_axi_stream_enable_cfg(
 			}
 		}
 	}
-	if (stream_info->state == START_PENDING)
+	if (stream_info->state == START_PENDING) {
 		axi_data->num_active_stream++;
-	else if (stream_info->state == STOP_PENDING)
+		trace_printk("START: vfeid: %d src: %d num_plane: %d enable_wm: %d num_active_stream: %d frmid: %d \n",
+			vfe_dev->pdev->id, stream_info->stream_src, stream_info->num_planes,
+			enable_wm, axi_data->num_active_stream,	vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
+		pr_notice("%s: START: vfeid: %d src: %d num_plane: %d enable_wm: %d num_active_stream: %d frmid: %d \n",
+			__func__, vfe_dev->pdev->id, stream_info->stream_src, stream_info->num_planes,
+			enable_wm, axi_data->num_active_stream,	vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
+	} else if (stream_info->state == STOP_PENDING) {
 		axi_data->num_active_stream--;
+		trace_printk("END: vfeid: %d src: %d num_plane: %d enable_wm: %d num_active_stream: %d frmid: %d \n",
+			vfe_dev->pdev->id, stream_info->stream_src, stream_info->num_planes,
+			enable_wm, axi_data->num_active_stream,	vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
+		pr_notice("%s: END: vfeid: %d src: %d num_plane: %d enable_wm: %d num_active_stream: %d frmid: %d \n",
+			__func__, vfe_dev->pdev->id, stream_info->stream_src, stream_info->num_planes,
+			enable_wm, axi_data->num_active_stream,	vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
+	}
 	return 0;
 error:
 	return -EINVAL;
@@ -1557,12 +1574,19 @@ void msm_isp_halt_send_error(struct vfe_device *vfe_dev, uint32_t event)
 		/* Recovery is already in Progress */
 		return;
 
+       /* if there are no active streams - do not start recovery */
+       if (!vfe_dev->axi_data.num_active_stream)
+               return;
+
 	if (ISP_EVENT_PING_PONG_MISMATCH == event &&
 		vfe_dev->axi_data.recovery_count < MAX_RECOVERY_THRESHOLD) {
 		vfe_dev->hw_info->vfe_ops.irq_ops.
 			read_irq_status(vfe_dev, &irq_status0, &irq_status1);
 		pr_err("%s:pingpong mismatch from vfe%d, core%d, recovery_count %d\n",
 			__func__, vfe_dev->pdev->id, smp_processor_id(),
+			vfe_dev->axi_data.recovery_count);
+		trace_printk("pingpong mismatch from vfe%d, core%d, recovery_count %d\n",
+			vfe_dev->pdev->id, smp_processor_id(),
 			vfe_dev->axi_data.recovery_count);
 
 		vfe_dev->axi_data.recovery_count++;
@@ -1579,6 +1603,7 @@ void msm_isp_halt_send_error(struct vfe_device *vfe_dev, uint32_t event)
 	halt_cmd.blocking_halt = 0;
 
 	pr_err("%s: vfe%d  exiting camera!\n", __func__, vfe_dev->pdev->id);
+	trace_printk("vfe%d  exiting camera!\n", vfe_dev->pdev->id);
 
 	atomic_set(&vfe_dev->error_info.overflow_state,
 		HALT_ENFORCED);

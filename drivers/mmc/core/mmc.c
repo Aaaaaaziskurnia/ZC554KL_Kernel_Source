@@ -684,6 +684,9 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 		card->ext_csd.strobe_support = ext_csd[EXT_CSD_STROBE_SUPPORT];
 		card->ext_csd.cmdq_support = ext_csd[EXT_CSD_CMDQ_SUPPORT];
 		card->ext_csd.fw_version = ext_csd[EXT_CSD_FW_VERSION];
+		/* add by liunianliang for read emmc health, 2017.08.22 begin */
+		card->ext_csd.pre_eol_info = ext_csd[EXT_CSD_PRE_EOL_INFO];
+		/* add by liunianliang for read emmc health, 2017.08.22 end */
 		pr_info("%s: eMMC FW version: 0x%02x\n",
 			mmc_hostname(card->host),
 			card->ext_csd.fw_version);
@@ -952,6 +955,9 @@ MMC_DEV_ATTR(raw_rpmb_size_mult, "%#x\n", card->ext_csd.raw_rpmb_size_mult);
 MMC_DEV_ATTR(enhanced_rpmb_supported, "%#x\n",
 		card->ext_csd.enhanced_rpmb_supported);
 MMC_DEV_ATTR(rel_sectors, "%#x\n", card->ext_csd.rel_sectors);
+/* add by liunianliang for read emmc health, 2017.08.22 begin */
+MMC_DEV_ATTR(pre_eol_info, "0x%02x", card->ext_csd.pre_eol_info);
+/* add by liunianliang for read emmc health, 2017.08.22 end */
 
 static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_emmc_total_size.attr,        //add by liunianliang for SWTASK-119
@@ -973,6 +979,7 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_raw_rpmb_size_mult.attr,
 	&dev_attr_enhanced_rpmb_supported.attr,
 	&dev_attr_rel_sectors.attr,
+	&dev_attr_pre_eol_info.attr,   // add by liunianliang for read emmc health, ZQL1526-812
 	NULL,
 };
 ATTRIBUTE_GROUPS(mmc_std);

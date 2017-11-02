@@ -573,9 +573,21 @@ static int32_t msm_actuator_move_focus(
 
 	CDBG("[actuator]called, dir %d, num_steps %d\n", dir, num_steps);
 
+/*
 	if (dest_step_pos == a_ctrl->curr_step_pos)
 		return rc;
-
+*/
+	if ((dest_step_pos == a_ctrl->curr_step_pos) || 
+	((dest_step_pos <= a_ctrl->total_steps) && 
+	(a_ctrl->step_position_table[dest_step_pos] == 
+	a_ctrl->step_position_table[a_ctrl->curr_step_pos]))) {
+        CDBG("cci:dest_step_pos = %d\n",dest_step_pos);
+        CDBG("cci:a_ctrl->curr_step_pos = %d\n",a_ctrl->curr_step_pos);
+        CDBG("cci:a_ctrl->step_position_table[%d]= %d\n",dest_step_pos,a_ctrl->step_position_table[dest_step_pos]);
+        CDBG("cci:a_ctrl->step_position_table[%d]) = %d\n",a_ctrl->curr_step_pos,a_ctrl->step_position_table[a_ctrl->curr_step_pos]);
+        return rc;
+    }
+     
 	if ((sign_dir > MSM_ACTUATOR_MOVE_SIGNED_NEAR) ||
 		(sign_dir < MSM_ACTUATOR_MOVE_SIGNED_FAR)) {
 		pr_err("Invalid sign_dir = %d\n", sign_dir);

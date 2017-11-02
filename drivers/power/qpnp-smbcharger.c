@@ -1495,6 +1495,12 @@ struct smbchg_chip *chip_b;
 void fg_smbchg_charging_en(bool en)
 { 
 	int rc = 0;
+	/*jiahao add for ZQL1526-470 @2017-07-22 start*/
+	if(chip_b == NULL){
+		printk("chip_b is NULL, return directly!!!\n");
+		return;
+	}
+	/*jiahao add for ZQL1526-470 @2017-07-22 end*/
 	rc = smbchg_charging_en(chip_b, en);
 		if (rc < 0) {
 		printk("byr__ Couldn't enable battery charging=%d\n", rc);
@@ -8356,7 +8362,7 @@ static void rerun_hvdcp_det_if_necessary(struct smbchg_chip *chip)
 		}
 	}
 }
-
+#if 0	//mark by jiahao @20170713
 /*byr add 2017.3.22 for SDP force to DCP*/
 static void rerun_apsd_det_if_necessary(struct smbchg_chip *chip) 
 { 
@@ -8388,7 +8394,7 @@ static void rerun_apsd_det_if_necessary(struct smbchg_chip *chip)
 	msecs_to_jiffies(2500)); 
 	} 
 } 
-
+#endif
 
 static int smbchg_probe(struct spmi_device *spmi)
 {
@@ -8677,7 +8683,7 @@ static int smbchg_probe(struct spmi_device *spmi)
 	}
 
 
-	rerun_apsd_det_if_necessary(chip); //byr add 2017.3.22
+	//rerun_apsd_det_if_necessary(chip); //byr add 2017.3.22	//mark by jiahao @20170713
 	rerun_hvdcp_det_if_necessary(chip);
 
 	dump_regs(chip);

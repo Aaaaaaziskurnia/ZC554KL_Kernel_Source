@@ -1788,8 +1788,11 @@ void msm_isp_process_overflow_irq(
 	uint32_t overflow_mask;
 
 	/* if there are no active streams - do not start recovery */
-	if (!vfe_dev->axi_data.num_active_stream)
+	if (!vfe_dev->axi_data.num_active_stream) {
+		trace_printk("num_active_stream is Zero");
+		pr_notice("%s: num_active_stream are zero \n", __func__);
 		return;
+	}
 
 	/*Mask out all other irqs if recovery is started*/
 	if (atomic_read(&vfe_dev->error_info.overflow_state) != NO_OVERFLOW) {
@@ -1799,7 +1802,10 @@ void msm_isp_process_overflow_irq(
 			&halt_restart_mask1);
 		*irq_status0 &= halt_restart_mask0;
 		*irq_status1 &= halt_restart_mask1;
-
+		pr_notice("Mask IRQ's to halt_restart mask: ovrflWState: %d\n",
+			atomic_read(&vfe_dev->error_info.overflow_state));
+		trace_printk("Mask IRQ's to halt_restart mask: ovrflWState: %d\n",
+			atomic_read(&vfe_dev->error_info.overflow_state));
 		return;
 	}
 
@@ -1820,8 +1826,10 @@ void msm_isp_process_overflow_irq(
 			return;
 		}
 
-		ISP_DBG("%s: VFE%d Bus overflow detected: start recovery!\n",
+		pr_notice("%s: VFE%d Bus overflow detected: start recovery!\n",
 			__func__, vfe_dev->pdev->id);
+		trace_printk("VFE%d Bus overflow detected: start recovery!\n",
+			vfe_dev->pdev->id);
 
 		/* maks off irq for current vfe */
 		atomic_cmpxchg(&vfe_dev->error_info.overflow_state,
@@ -1831,7 +1839,7 @@ void msm_isp_process_overflow_irq(
 
 		vfe_dev->hw_info->vfe_ops.core_ops.
 			set_halt_restart_mask(vfe_dev);
-
+        vfe_dev->hw_info->vfe_ops.axi_ops.halt(vfe_dev, 0);
 		/* mask off other vfe if dual vfe is used */
 		if (vfe_dev->is_split) {
 			uint32_t other_vfe_id;
@@ -1856,6 +1864,7 @@ void msm_isp_process_overflow_irq(
 			vfe_dev->hw_info->vfe_ops.core_ops.
 				set_halt_restart_mask(vfe_dev->common_data->
 				dual_vfe_res->vfe_dev[other_vfe_id]);
+		    other_vfe_dev->hw_info->vfe_ops.axi_ops.halt(vfe_dev, 0);
 		}
 
 		/* reset irq status so skip further process */
@@ -1870,6 +1879,10 @@ void msm_isp_process_overflow_irq(
 				vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id;
 			error_event.u.error_info.err_type =
 				ISP_ERROR_BUS_OVERFLOW;
+			trace_printk("Issue ERROR_BUS_OVERFLOW to User frmid: %d\n",
+				vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
+			pr_notice("%s: Issue ERROR_BUS_OVERFLOW to User frmid: %d\n",
+				__func__, vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
 			msm_isp_send_event(vfe_dev,
 				ISP_EVENT_ERROR, &error_event);
 		}
@@ -1906,6 +1919,9 @@ static void msm_isp_enqueue_tasklet_cmd(struct vfe_device *vfe_dev,
 	queue_cmd->vfeInterruptStatus0 = irq_status0;
 	queue_cmd->vfeInterruptStatus1 = irq_status1;
 	queue_cmd->vfePingPongStatus = ping_pong_status;
+	trace_printk("vfeid: %d irq_status0: 0x%x irq_status1: 0x%x pipos: 0x%x frmid: %d",
+		vfe_dev->pdev->id, irq_status0, irq_status1, ping_pong_status,
+		vfe_dev->axi_data.src_info[0].frame_id);
 	msm_isp_get_timestamp(&queue_cmd->ts, vfe_dev);
 	queue_cmd->cmd_used = 1;
 	vfe_dev->taskletq_idx = (vfe_dev->taskletq_idx + 1) %
@@ -1927,6 +1943,8 @@ irqreturn_t msm_isp_process_irq(int irq_num, void *data)
 	if ((irq_status0 == 0) && (irq_status1 == 0)) {
 		ISP_DBG("%s:VFE%d irq_status0 & 1 are both 0\n",
 			__func__, vfe_dev->pdev->id);
+		trace_printk("VFE%d irq_status0 & 1 are both 0\n",
+			vfe_dev->pdev->id);
 		return IRQ_HANDLED;
 	}
 	ping_pong_status = vfe_dev->hw_info->vfe_ops.axi_ops.
@@ -1951,6 +1969,7 @@ irqreturn_t msm_isp_process_irq(int irq_num, void *data)
 		(!(((error_mask0 != 0) || (error_mask1 != 0)) &&
 		 vfe_dev->error_info.error_count == 1))) {
 		ISP_DBG("%s: error_mask0/1 & error_count are set!\n", __func__);
+		trace_printk("error_mask0/1 & error_count are set!\n");
 		return IRQ_HANDLED;
 	}
 
@@ -2005,6 +2024,9 @@ void msm_isp_do_tasklet(unsigned long data)
 				__func__);
 			continue;
 		}
+	trace_printk("vfeid: %d irq_status0: 0x%x irq_status1: 0x%x pipos: 0x%x frmid: %d",
+		vfe_dev->pdev->id, irq_status0, irq_status1, pingpong_status,
+		vfe_dev->axi_data.src_info[0].frame_id);
 		msm_isp_process_error_info(vfe_dev);
 		irq_ops->process_stats_irq(vfe_dev,
 			irq_status0, irq_status1,

@@ -2511,7 +2511,11 @@ static bool vbat_is_over_4180mv = false;
 static int set_prop_sw_jeita_vol_cur(struct fg_chip *chip, int vol_mv, int cur_ma);
 static void sw_jeita_tangjun(struct fg_chip *chip);
 #endif
-
+/*jiahao add for usb connector state debug @2017-06-30 start*/
+#ifdef USB_CONNECTOR_STATE_DEBUG
+static int update_usb_connector_state(struct fg_chip * chip);
+#endif
+/*jiahao add for usb connector state debug @2017-06-30 end*/
 #define LSB_24B_NUMRTR		596046
 #define LSB_24B_DENMTR		1000000
 #define LSB_16B_NUMRTR		152587
@@ -2613,6 +2617,13 @@ static int update_sram_data(struct fg_chip *chip, int *resched_ms)
 #ifdef SW_JEITA_TANGJUN
 	sw_jeita_tangjun(chip);
 #endif
+
+	/*jiahao add for usb connector state debug @2017-06-30 start*/
+#ifdef USB_CONNECTOR_STATE_DEBUG
+	update_usb_connector_state(chip);
+#endif
+	/*jiahao add for usb connector state debug @2017-06-30 end*/
+
 	/* Backup the registers whenever no error happens during update */
 	if (fg_reset_on_lockup && !chip->ima_error_handling) {
 		if (!rc) {
@@ -2944,36 +2955,9 @@ static void charge_limit_work(struct work_struct *work)
 
 /*jiahao add for usb connector state debug @2017-05-22 start*/
 #ifdef USB_CONNECTOR_STATE_DEBUG
-#define USB_CONNECTOR_TEMP_HOT 80
+#define USB_CONNECTOR_TEMP_HOT 70
 #define USB_CONNECTOR_TEMP_WARM 60
 struct switch_dev usb_connector_dev;
-static bool is_charger_available(struct fg_chip *chip);
-
-static int set_prop_enable_charging_dependon_usb_connector_state(struct fg_chip *chip, int state)
-{
-	int rc = 0;
-	union power_supply_propval ret = {!state, };
-
-	if (!is_charger_available(chip)) {
-		pr_err("Charger not available yet!\n");
-		return -EINVAL;
-	}
-
-	rc = chip->batt_psy->set_property(chip->batt_psy,
-			POWER_SUPPLY_PROP_CHARGING_ENABLED,
-			&ret);
-	if (rc) {
-		pr_err("couldn't configure batt chg %d\n", rc);
-		return rc;
-	}
-
-	chip->charging_disabled = state;
-	if (fg_debug_mask & FG_STATUS)
-		pr_info("[USB_STATE] %sabling charging\n", state ? "dis" : "en");
-
-	return rc;
-}
-
 
 static int create_usb_connector(void)
 {
@@ -2995,7 +2979,7 @@ static int create_usb_connector(void)
 static int update_usb_connector_state(struct fg_chip *chip)
 {
 
-        static int state;
+        static int state = 0;
 	int ret;
         struct thermal_zone_device *usb_connector_device;
         long temperature;
@@ -3039,7 +3023,28 @@ static int update_usb_connector_state(struct fg_chip *chip)
 			pr_info("[USB_STATE] the temperature is normal, no need to set the state\n");
 	}
 
-	set_prop_enable_charging_dependon_usb_connector_state(chip, state);
+	if(state == 1)
+	{
+		pr_info("[USB_STATE] the usb state is 1\n");
+		if(charge_disable == 1)
+			pr_info("[USB_STATE] As the charger limit work start,no need to disable charging again\n");
+		else
+		{
+			pr_info("[USB_STATE] we should disable charging\n");
+			fg_smbchg_charging_en(0);
+		}
+	}
+	else
+	{
+		pr_info("[USB_STATE] the usb state is 0\n");
+		if(charge_disable == 1)
+			pr_info("[USB_STATE] As the charger limit work start,should not recovery charging\n");
+		else
+		{
+			pr_info("[USB_STATE] we should recovery charging\n");
+			fg_smbchg_charging_en(1);
+		}
+	}
 	switch_set_state(&usb_connector_dev, state);
 
         return 0;
@@ -3168,11 +3173,7 @@ static void update_temp_data(struct work_struct *work)
 		goto resched;
 
 	fg_stay_awake(&chip->update_temp_wakeup_source);
-/*jiahao add for usb connector state debug @2017-05-22 start*/
-#ifdef USB_CONNECTOR_STATE_DEBUG
-	update_usb_connector_state(chip);
-#endif
-/*jiahao add for usb connector state debug @2017-05-22 end*/
+
 	if (chip->sw_rbias_ctrl) {
 		rc = fg_mem_masked_write(chip, EXTERNAL_SENSE_SELECT,
 				BATT_TEMP_CNTRL_MASK,
